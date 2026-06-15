@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>議員訪問管理</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Noto+Serif+JP:wght@600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+  :root {
+    --navy: #0F172A;
+    --navy-mid: #1E3A5F;
+    --navy-light: #2D5282;
+    --crimson: #E03A3E;
+    --crimson-dark: #B91C1F;
+    --gold: #D4A017;
+    --emerald: #10B981;
+    --sky: #38BDF8;
+    --slate: #64748B;
+    --slate-light: #94A3B8;
+    --bg: #F1F5F9;
+    --card: #FFFFFF;
+    --text: #0F172A;
+    --text-soft: #475569;
+    --border: #E2E8F0;
+    --radius: 12px;
+    --tab-h: 64px;
+    --header-h: 56px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; overflow: hidden; background: var(--navy); }
+  body { font-family: 'Noto Sans JP', sans-serif; color: var(--text); font-size: 14px; }
+
+  /* ─── App Shell ─── */
+  #app { display: flex; flex-direction: column; height: 100%; max-width: 430px; margin: 0 auto; background: var(--bg); position: relative; }
+  #header { background: var(--navy); color: #fff; height: var(--header-h); display: flex; align-items: center; padding: 0 16px; gap: 10px; flex-shrink: 0; z-index: 100; }
+  #header h1 { font-family: 'Noto Serif JP', serif; font-size: 16px; font-weight: 700; letter-spacing: .04em; flex: 1; }
+  #header .back-btn { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,.1); border-radius: 8px; border: none; color: #fff; font-size: 18px; cursor: pointer; flex-shrink: 0; }
+  #main { flex: 1; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
+  #tabs { height: var(--tab-h); background: var(--navy); display: flex; flex-shrink: 0; border-top: 1px solid rgba(255,255,255,.1); }
+  .tab-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: none; background: none; color: var(--slate-light); font-size: 10px; font-family: 'Noto Sans JP', sans-serif; cursor: pointer; transition: color .2s; padding: 6px 0; }
+  .tab-btn .tab-icon { font-size: 20px; line-height: 1; }
+  .tab-btn.active { color: var(--sky); }
+  .tab-btn.active .tab-icon { filter: drop-shadow(0 0 6px rgba(56,189,248,.6)); }
+
+  /* ─── Screens ─── */
+  .screen { display: none; min-height: 100%; }
+  .screen.active { display: block; }
+
+  /* ─── MAP ─── */
+  #map-screen { height: 100%; }
+  #map-container { height: 100%; }
+  .leaflet-popup-content-wrapper { border-radius: 10px !important; box-shadow: 0 4px 24px rgba(0,0,0,.2) !important; }
+  .leaflet-popup-content { margin: 12px 16px !important; }
+  .map-popup h3 { font-size: 14px; font-weight: 700; color: var(--navy); margin-bottom: 4px; }
+  .map-popup p { font-size: 12px; color: var(--text-soft); margin-bottom: 8px; }
+  .map-popup-btn { background: var(--navy); color: #fff; border: none; border-radius: 8px; padding: 7px 14px; font-size: 12px; font-family: 'Noto Sans JP', sans-serif; cursor: pointer; width: 100%; font-weight: 500; }
+
+  /* ─── LIST ─── */
+  #list-screen { padding: 16px; padding-bottom: 16px; }
+  .filter-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .filter-chip { padding: 6px 14px; border-radius: 999px; border: 1.5px solid var(--border); background: #fff; font-size: 12px; font-family: 'Noto Sans JP', sans-serif; color: var(--text-soft); cursor: pointer; font-weight: 500; transition: all .15s; white-space: nowrap; }
+  .filter-chip.active { border-color: var(--navy-mid); background: var(--navy-mid); color: #fff; }
+  .filter-select { padding: 6px 12px; border-radius: 999px; border: 1.5px solid var(--border); background: #fff; font-size: 12px; font-family: 'Noto Sans JP', sans-serif; color: var(--text-soft); cursor: pointer; font-weight: 500; appearance: none; -webkit-appearance: none; }
+  .member-card { background: var(--card); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.07); display: flex; gap: 12px; align-items: flex-start; cursor: pointer; transition: transform .1s, box-shadow .1s; active: transform .95; }
+  .member-card:active { transform: scale(.98); box-shadow: 0 1px 2px rgba(0,0,0,.1); }
+  .status-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; }
+  .dot-undefined { background: var(--sky); }
+  .dot-group { background: var(--gold); }
+  .dot-individual { background: var(--emerald); }
+  .card-body { flex: 1; min-width: 0; }
+  .card-name { font-size: 15px; font-weight: 700; color: var(--navy); margin-bottom: 3px; }
+  .card-meta { font-size: 12px; color: var(--text-soft); display: flex; gap: 8px; flex-wrap: wrap; }
+  .tag { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
+  .tag-party { background: #EFF6FF; color: #1D4ED8; }
+    .tag-party.ldp { background: #FFF7ED; color: #C2410C; }
+  .tag-party.cdp { background: #EFF6FF; color: #1D4ED8; }
+  .tag-nippon { background: #FEF3C7; color: #92400E; }
+  .tag-shinto { background: #F5F3FF; color: #6D28D9; }
+  .tag-status { background: #F0FDF4; color: #166534; }
+  .card-arrow { color: var(--slate-light); font-size: 16px; align-self: center; }
+
+  /* ─── DETAIL ─── */
+  #detail-screen { padding: 16px; }
+  .detail-header { background: var(--navy); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; color: #fff; position: relative; overflow: hidden; }
+  .detail-header::before { content: ''; position: absolute; top: -20px; right: -20px; width: 80px; height: 80px; border-radius: 50%; background: rgba(255,255,255,.05); }
+  .detail-name { font-family: 'Noto Serif JP', serif; font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .detail-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+  .detail-sub { font-size: 12px; color: var(--slate-light); }
+  .section-card { background: var(--card); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+  .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--slate); margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
+  .section-title::before { content: ''; display: block; width: 3px; height: 12px; background: var(--crimson); border-radius: 2px; }
+  .field-row { margin-bottom: 12px; }
+  .field-label { font-size: 11px; color: var(--slate); margin-bottom: 4px; font-weight: 500; }
+  .field-value { font-size: 14px; color: var(--text); font-weight: 500; }
+  input.field-input, select.field-input, textarea.field-input {
+    width: 100%; padding: 10px 12px; border: 1.5px solid var(--border); border-radius: 8px;
+    font-size: 14px; font-family: 'Noto Sans JP', sans-serif; color: var(--text); background: var(--bg);
+    outline: none; transition: border-color .2s;
+  }
+  input.field-input:focus, select.field-input:focus, textarea.field-input:focus { border-color: var(--navy-mid); background: #fff; }
+  textarea.field-input { resize: vertical; min-height: 70px; }
+  .checkbox-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .checkbox-row:last-child { border-bottom: none; }
+  .checkbox-row label { font-size: 14px; color: var(--text); flex: 1; }
+  .checkbox-row input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--navy-mid); cursor: pointer; }
+  .btn-primary { width: 100%; padding: 14px; background: var(--navy); color: #fff; border: none; border-radius: var(--radius); font-size: 15px; font-weight: 700; font-family: 'Noto Sans JP', sans-serif; cursor: pointer; transition: background .2s; margin-top: 4px; }
+  .btn-primary:active { background: var(--navy-mid); }
+  .btn-crimson { background: var(--crimson); }
+  .btn-crimson:active { background: var(--crimson-dark); }
+  .btn-ghost { background: none; border: 1.5px solid var(--border); color: var(--text-soft); }
+  .btn-ghost:active { background: var(--border); }
+  .btn-sm { width: auto; padding: 8px 16px; font-size: 13px; }
+  .activity-log { border-radius: 8px; border: 1px solid var(--border); overflow: hidden; margin-top: 8px; }
+  .log-item { padding: 10px 12px; border-bottom: 1px solid var(--border); display: flex; gap: 10px; align-items: flex-start; }
+  .log-item:last-child { border-bottom: none; }
+  .log-date { font-size: 11px; color: var(--slate); white-space: nowrap; padding-top: 2px; }
+  .log-content { flex: 1; }
+  .log-result { font-size: 13px; font-weight: 600; color: var(--navy); margin-bottom: 2px; }
+  .log-detail { font-size: 12px; color: var(--text-soft); }
+  .result-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+  .rb-met { background: #D1FAE5; color: #065F46; }
+  .rb-secretary { background: #DBEAFE; color: #1E40AF; }
+  .rb-absent { background: #FEE2E2; color: #991B1B; }
+  .rb-post { background: #F3F4F6; color: #374151; }
+  .no-log { text-align: center; padding: 20px; color: var(--slate-light); font-size: 13px; }
+
+  /* ─── REPORT ─── */
+  #report-screen { padding: 16px; }
+  .report-section { margin-bottom: 20px; }
+  .report-section-title { font-size: 13px; font-weight: 700; color: var(--text-soft); margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+  .report-section-title::before { content: ''; display: block; width: 3px; height: 14px; background: var(--crimson); border-radius: 2px; }
+  .toggle-group { display: flex; flex-direction: column; gap: 8px; }
+  .toggle-btn { padding: 14px 16px; border-radius: 10px; border: 2px solid var(--border); background: #fff; font-size: 14px; font-family: 'Noto Sans JP', sans-serif; font-weight: 500; color: var(--text-soft); cursor: pointer; transition: all .15s; text-align: left; display: flex; align-items: center; gap: 10px; }
+  .toggle-btn .btn-icon { font-size: 18px; }
+  .toggle-btn.selected { border-color: var(--navy-mid); background: var(--navy); color: #fff; }
+  .toggle-group-h { display: flex; gap: 8px; flex-wrap: wrap; }
+  .toggle-btn-sm { padding: 10px 16px; border-radius: 8px; border: 2px solid var(--border); background: #fff; font-size: 13px; font-family: 'Noto Sans JP', sans-serif; font-weight: 500; color: var(--text-soft); cursor: pointer; transition: all .15s; }
+  .toggle-btn-sm.selected { border-color: var(--navy-mid); background: var(--navy); color: #fff; }
+  .quick-date { display: flex; gap: 8px; margin-bottom: 10px; }
+  .quick-date-btn { flex: 1; padding: 10px; border-radius: 8px; border: 2px solid var(--border); background: #fff; font-size: 13px; font-family: 'Noto Sans JP', sans-serif; font-weight: 600; cursor: pointer; color: var(--text-soft); text-align: center; transition: all .15s; }
+  .quick-date-btn.selected { border-color: var(--navy-mid); background: var(--navy); color: #fff; }
+  .date-input-wrap { position: relative; }
+  .materials-list { display: flex; flex-direction: column; gap: 0; border-radius: 10px; border: 1.5px solid var(--border); overflow: hidden; background: #fff; }
+  .material-item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+  .material-item:last-child { border-bottom: none; }
+  .material-item label { flex: 1; font-size: 14px; cursor: pointer; }
+  .material-item input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--navy-mid); cursor: pointer; flex-shrink: 0; }
+  .add-material-btn { width: 100%; padding: 12px; border: 2px dashed var(--border); border-radius: 10px; background: none; font-size: 13px; font-family: 'Noto Sans JP', sans-serif; color: var(--slate); cursor: pointer; margin-top: 8px; transition: border-color .2s, color .2s; }
+  .add-material-btn:active { border-color: var(--navy-mid); color: var(--navy); }
+  .feeling-textarea { width: 100%; padding: 12px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 14px; font-family: 'Noto Sans JP', sans-serif; min-height: 90px; outline: none; resize: vertical; background: #fff; transition: border-color .2s; }
+  .feeling-textarea:focus { border-color: var(--navy-mid); }
+
+  /* ─── Toast ─── */
+  #toast { position: fixed; bottom: calc(var(--tab-h) + 16px); left: 50%; transform: translateX(-50%) translateY(20px); background: var(--navy); color: #fff; padding: 10px 20px; border-radius: 999px; font-size: 13px; font-weight: 500; opacity: 0; transition: opacity .25s, transform .25s; pointer-events: none; z-index: 9999; white-space: nowrap; }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ─── Misc ─── */
+  .divider { height: 1px; background: var(--border); margin: 12px 0; }
+  .empty-state { text-align: center; padding: 40px 20px; color: var(--slate-light); }
+  .empty-state .es-icon { font-size: 40px; margin-bottom: 10px; }
+  .empty-state p { font-size: 14px; }
+  .pb-safe { padding-bottom: 16px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- Header -->
+  <div id="header">
+    <button id="back-btn" class="back-btn" style="display:none" onclick="goBack()">‹</button>
+    <h1 id="header-title">議員訪問管理</h1>
+  </div>
+
+  <!-- Main content -->
+  <div id="main">
+    <!-- MAP -->
+    <div id="map-screen" class="screen active">
+      <div id="map-container"></div>
+    </div>
+
+    <!-- LIST -->
+    <div id="list-screen" class="screen">
+      <div class="filter-bar">
+        <select class="filter-select" id="filter-status" onchange="applyFilter()">
+          <option value="">担当：全て</option>
+          <option value="未定">未定</option>
+          <option value="グループ1">グループ1</option>
+          <option value="グループ2">グループ2</option>
+          <option value="グループ3">グループ3</option>
+          <option value="グループ4">グループ4</option>
+          <option value="個別">個別担当</option>
+        </select>
+        <select class="filter-select" id="filter-party" onchange="applyFilter()">
+          <option value="">政党：全て</option>
+          <option value="自由民主党">自民党</option>
+          <option value="立憲民主党">立憲</option>
+          <option value="公明党">公明党</option>
+          <option value="日本維新の会">維新</option>
+        </select>
+        <div class="filter-chip" id="fc-nippon" onclick="toggleFilterChip('nippon')">日本会議</div>
+        <div class="filter-chip" id="fc-shinto" onclick="toggleFilterChip('shinto')">神道政治連盟</div>
+      </div>
+      <button id="sort-geo-btn" onclick="sortByDistance()" style="width:100%;margin-bottom:12px;display:flex;align-items:center;justify-content:center;gap:8px;padding:12px;background:#fff;border:2px solid var(--border);border-radius:10px;font-size:13px;font-weight:700;font-family:'Noto Sans JP',sans-serif;color:var(--navy);cursor:pointer;transition:all .2s">
+        <span id="sort-geo-icon" style="font-size:16px">&#128205;</span>
+        <span id="sort-geo-label">現在地から近い順に並び替え</span>
+      </button>
+      <div id="member-list"></div>
+      <div class="pb-safe"></div>
+    </div>
+
+    <!-- DETAIL -->
+    <div id="detail-screen" class="screen">
+      <div id="detail-content"></div>
+      <div class="pb-safe"></div>
+    </div>
+
+    <!-- REPORT -->
+    <div id="report-screen" class="screen">
+      <div id="report-content"></div>
+      <div class="pb-safe"></div>
+    </div>
+  </div>
+
+  <!-- Bottom Tabs -->
+  <div id="tabs">
+    <button class="tab-btn active" onclick="switchTab('map')" id="tab-map">
+      <span class="tab-icon">🗺️</span>マップ
+    </button>
+    <button class="tab-btn" onclick="switchTab('list')" id="tab-list">
+      <span class="tab-icon">📋</span>一覧
+    </button>
+    <button class="tab-btn" onclick="switchTab('detail')" id="tab-detail" style="display:none">
+      <span class="tab-icon">👤</span>詳細
+    </button>
+    <button class="tab-btn" onclick="switchTab('report')" id="tab-report" style="display:none">
+      <span class="tab-icon">📝</span>記録
+    </button>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+// ════════════════════════════════════════
+// DATA
+// ════════════════════════════════════════
+const defaultMaterials = ['広告文','亡国政権1','亡国政権2','野望1','野望2','野望3','策謀'];
+let extraMaterials = [];
+
+let members = [
+  {
+    id: 1,
+    name: '山田 太郎',
+    party: '自由民主党',
+    lat: 35.6762, lng: 139.6503,
+    address: '東京都千代田区永田町1-7-1 衆議院第二議員会館 201号室',
+    openHours: '火・木 10:00〜17:00（要事前確認）',
+    nippon: true, shinto: true,
+    summary: '文部科学委員会所属。教育政策に関心が高い。',
+    status: '未定',
+    assignedTo: '',
+    logs: [
+      { date: '2025-06-01', result: '面談できた', target: '本人', items: ['広告文','亡国政権1'], feeling: '非常に好感触。再訪を快諾。' },
+      { date: '2025-05-15', result: '秘書対応', target: '秘書', items: ['広告文'], feeling: '資料を受け取ってもらえた。' }
+    ]
+  },
+  {
+    id: 2,
+    name: '鈴木 花子',
+    party: '立憲民主党',
+    lat: 35.6785, lng: 139.6523,
+    address: '東京都千代田区永田町1-7-1 参議院議員会館 312号室',
+    openHours: '月〜金 9:00〜18:00',
+    nippon: false, shinto: false,
+    summary: '外務委員会委員。憲法改正に慎重な立場。',
+    status: 'グループ1',
+    assignedTo: 'グループ1',
+    logs: [
+      { date: '2025-05-28', result: '不在', target: '—', items: [], feeling: '次回は事前にアポを取る。' }
+    ]
+  },
+  {
+    id: 3,
+    name: '田中 健二',
+    party: '自由民主党',
+    lat: 35.6740, lng: 139.6480,
+    address: '東京都千代田区永田町2-1-2 衆議院第一議員会館 501号室',
+    openHours: '月・水・金 11:00〜17:00',
+    nippon: true, shinto: false,
+    summary: '防衛委員会筆頭理事。国防・安全保障に積極的。',
+    status: 'グループ2',
+    assignedTo: 'グループ2',
+    logs: []
+  },
+  {
+    id: 4,
+    name: '佐藤 美智代',
+    party: '公明党',
+    lat: 35.6770, lng: 139.6545,
+    address: '東京都千代田区永田町1-11-23 参議院議員会館 108号室',
+    openHours: '火・木 13:00〜17:00（秘書対応可）',
+    nippon: false, shinto: true,
+    summary: '厚生労働委員会所属。福祉・医療政策が専門。',
+    status: '個別',
+    assignedTo: '山本班長',
+    logs: [
+      { date: '2025-06-03', result: '面談できた', target: '本人', items: ['広告文','野望1','野望2'], feeling: '前向きな反応。署名活動の協力も示唆。' }
+    ]
+  },
+  {
+    id: 5,
+    name: '伊藤 一郎',
+    party: '日本維新の会',
+    lat: 35.6750, lng: 139.6510,
+    address: '東京都千代田区永田町2-2-1 衆議院第二議員会館 615号室',
+    openHours: '水・金 10:00〜16:00',
+    nippon: false, shinto: false,
+    summary: '憲法審査会委員。改正推進派。',
+    status: 'グループ3',
+    assignedTo: 'グループ3',
+    logs: [
+      { date: '2025-06-05', result: '投函のみ', target: '—', items: ['広告文'], feeling: '不在だったため投函。' }
+    ]
+  }
+];
+
+// ════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════
+let currentTab = 'map';
+let currentMemberId = null;
+let tabHistory = [];
+let filterState = { status: '', party: '', nippon: false, shinto: false };
+let geoSort = { active: false, lat: null, lng: null };
+
+// ハバーサイン公式で直線距離(km)を計算
+function calcDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLng/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function sortByDistance() {
+  const btn  = document.getElementById('sort-geo-btn');
+  const icon = document.getElementById('sort-geo-icon');
+  const lbl  = document.getElementById('sort-geo-label');
+
+  // 現在地ソートが既にONなら解除
+  if (geoSort.active) {
+    geoSort = { active: false, lat: null, lng: null };
+    btn.style.borderColor  = 'var(--border)';
+    btn.style.background   = '#fff';
+    btn.style.color        = 'var(--navy)';
+    icon.textContent       = '\uD83D\uDCCD';
+    lbl.textContent        = '現在地から近い順に並び替え';
+    renderList();
+    return;
+  }
+
+  // 取得中UI
+  btn.style.borderColor = 'var(--navy-mid)';
+  btn.style.background  = 'var(--navy)';
+  btn.style.color       = '#fff';
+  icon.textContent      = '⏳';
+  lbl.textContent       = '現在地を取得中…';
+  btn.style.pointerEvents = 'none';
+
+  if (!navigator.geolocation) {
+    resetGeoBtn();
+    showToast('⚠️ このブラウザは位置情報をサポートしていません');
+    return;
+  }
+
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      geoSort.active = true;
+      geoSort.lat = pos.coords.latitude;
+      geoSort.lng = pos.coords.longitude;
+      btn.style.pointerEvents = '';
+      btn.style.borderColor   = 'var(--emerald)';
+      btn.style.background    = 'var(--emerald)';
+      btn.style.color         = '#fff';
+      icon.textContent        = '\u2705';
+      lbl.textContent         = '現在地から近い順（タップで解除）';
+      renderList();
+    },
+    (err) => {
+      resetGeoBtn();
+      btn.style.pointerEvents = '';
+      const msgs = {
+        1: '位置情報の使用が拒否されました。ブラウザの設定から許可してください。',
+        2: '現在地を取得できませんでした（電波・GPS状況を確認してください）。',
+        3: '現在地の取得がタイムアウトしました。もう一度お試しください。'
+      };
+      showToast('⚠️ ' + (msgs[err.code] || '位置情報の取得に失敗しました'));
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+  );
+}
+
+function resetGeoBtn() {
+  const btn  = document.getElementById('sort-geo-btn');
+  const icon = document.getElementById('sort-geo-icon');
+  const lbl  = document.getElementById('sort-geo-label');
+  if (!btn) return;
+  btn.style.borderColor = 'var(--border)';
+  btn.style.background  = '#fff';
+  btn.style.color       = 'var(--navy)';
+  icon.textContent      = '\uD83D\uDCCD';
+  lbl.textContent       = '現在地から近い順に並び替え';
+}
+let mapInstance = null;
+let mapMarkers = {};
+
+// ════════════════════════════════════════
+// NAVIGATION
+// ════════════════════════════════════════
+function switchTab(tab, push=true) {
+  if (push && currentTab !== tab) tabHistory.push(currentTab);
+  currentTab = tab;
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(tab + '-screen').classList.add('active');
+  const tb = document.getElementById('tab-' + tab);
+  if (tb) tb.classList.add('active');
+
+  const backBtn = document.getElementById('back-btn');
+  const title = document.getElementById('header-title');
+
+  if (tab === 'map') { title.textContent = '議員訪問管理'; backBtn.style.display = 'none'; initMap(); }
+  else if (tab === 'list') { title.textContent = '議員一覧'; backBtn.style.display = 'none'; renderList(); }
+  else if (tab === 'detail') { title.textContent = '議員詳細'; backBtn.style.display = 'block'; renderDetail(); }
+  else if (tab === 'report') { title.textContent = '訪問記録'; backBtn.style.display = 'block'; renderReport(); }
+
+  document.getElementById('tab-detail').style.display = currentMemberId ? 'flex' : 'none';
+  document.getElementById('tab-report').style.display = currentMemberId ? 'flex' : 'none';
+}
+
+function goBack() {
+  if (tabHistory.length > 0) {
+    const prev = tabHistory.pop();
+    switchTab(prev, false);
+  }
+}
+
+function openMember(id) {
+  currentMemberId = id;
+  document.getElementById('tab-detail').style.display = 'flex';
+  document.getElementById('tab-report').style.display = 'flex';
+  switchTab('detail');
+}
+
+// ════════════════════════════════════════
+// MAP
+// ════════════════════════════════════════
+function initMap() {
+  if (typeof L === 'undefined') {
+    document.getElementById('map-container').innerHTML =
+      '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:#64748b;gap:12px"><div style="font-size:32px">🗺️</div><p style="font-size:13px">地図を読み込み中…<br>しばらくしてからタブを切り替えてください</p></div>';
+    return;
+  }
+  if (mapInstance) { mapInstance.invalidateSize(); return; }
+  mapInstance = L.map('map-container').setView([35.676, 139.651], 16);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors', maxZoom: 19
+  }).addTo(mapInstance);
+  renderMapPins();
+}
+
+function getMarkerColor(m) {
+  if (m.status === '個別') return '#10B981';
+  if (m.status !== '未定') return '#D4A017';
+  return '#38BDF8';
+}
+
+function renderMapPins() {
+  members.forEach(m => {
+    const color = getMarkerColor(m);
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="width:32px;height:32px;border-radius:50% 50% 50% 0;background:${color};border:3px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.3);transform:rotate(-45deg);"></div>`,
+      iconSize: [32, 32], iconAnchor: [16, 32], popupAnchor: [0, -36]
+    });
+    const marker = L.marker([m.lat, m.lng], { icon }).addTo(mapInstance);
+    const lastLog = m.logs.length > 0 ? m.logs[0] : null;
+    marker.bindPopup(`
+      <div class="map-popup">
+        <h3>${m.name}</h3>
+        <p>${m.party}　${m.status !== '未定' ? m.assignedTo || m.status : '担当未定'}</p>
+        ${lastLog ? `<p style="font-size:11px;color:#64748b">最終: ${lastLog.date} ${lastLog.result}</p>` : ''}
+        <button class="map-popup-btn" onclick="openMember(${m.id})">詳細を見る</button>
+      </div>
+    `);
+    mapMarkers[m.id] = marker;
+  });
+}
+
+// ════════════════════════════════════════
+// LIST
+// ════════════════════════════════════════
+function toggleFilterChip(type) {
+  filterState[type] = !filterState[type];
+  document.getElementById('fc-' + type).classList.toggle('active', filterState[type]);
+  applyFilter();
+}
+function applyFilter() {
+  filterState.status = document.getElementById('filter-status').value;
+  filterState.party = document.getElementById('filter-party').value;
+  renderList();
+}
+
+function renderList() {
+  const el = document.getElementById('member-list');
+  let filtered = members.filter(m => {
+    if (filterState.status) {
+      if (filterState.status === '個別' && m.status !== '個別') return false;
+      if (filterState.status !== '個別' && m.status !== filterState.status) return false;
+    }
+    if (filterState.party && m.party !== filterState.party) return false;
+    if (filterState.nippon && !m.nippon) return false;
+    if (filterState.shinto && !m.shinto) return false;
+    return true;
+  });
+
+  // 現在地ソートが有効なら距離を付与してソート
+  if (geoSort.active) {
+    filtered = filtered.map(m => ({
+      ...m,
+      _dist: calcDistance(geoSort.lat, geoSort.lng, m.lat, m.lng)
+    })).sort((a, b) => a._dist - b._dist);
+  }
+
+  if (filtered.length === 0) {
+    el.innerHTML = `<div class="empty-state"><div class="es-icon">🔍</div><p>該当する議員がいません</p></div>`;
+    return;
+  }
+
+  el.innerHTML = filtered.map(m => {
+    const dotCls = m.status === '未定' ? 'dot-undefined' : m.status === '個別' ? 'dot-individual' : 'dot-group';
+    const partyShort = { '自由民主党':'自民','立憲民主党':'立憲','公明党':'公明','日本維新の会':'維新' }[m.party] || m.party;
+    const partyClass = { '自由民主党':'ldp','立憲民主党':'cdp' }[m.party] || '';
+    const statusLabel = m.status === '個別' ? m.assignedTo : m.status;
+    const distLabel = (geoSort.active && m._dist != null)
+      ? `<span style="font-size:11px;color:var(--navy-mid);font-weight:600">📍 ${m._dist < 1 ? (m._dist*1000).toFixed(0)+'m' : m._dist.toFixed(1)+'km'}</span>`
+      : '';
+    return `
+    <div class="member-card" onclick="openMember(${m.id})">
+      <div class="status-dot ${dotCls}"></div>
+      <div class="card-body">
+        <div class="card-name">${m.name} ${distLabel}</div>
+        <div class="card-meta">
+          <span class="tag tag-party ${partyClass}">${partyShort}</span>
+          ${m.nippon ? '<span class="tag tag-nippon">日本会議</span>' : ''}
+          ${m.shinto ? '<span class="tag tag-shinto">神道</span>' : ''}
+          <span class="tag tag-status">${statusLabel}</span>
+        </div>
+        ${m.logs.length > 0 ? `<div style="margin-top:4px;font-size:11px;color:var(--slate)">最終: ${m.logs[0].date} — ${m.logs[0].result}</div>` : ''}
+      </div>
+      <div class="card-arrow">›</div>
+    </div>`;
+  }).join('');
+}
+
+// ════════════════════════════════════════
+// DETAIL
+// ════════════════════════════════════════
+function renderDetail() {
+  const m = members.find(x => x.id === currentMemberId);
+  if (!m) return;
+  const partyClass = { '自由民主党':'ldp','立憲民主党':'cdp' }[m.party] || '';
+  const dotColor = m.status === '未定' ? '#38BDF8' : m.status === '個別' ? '#10B981' : '#D4A017';
+
+  const logsHtml = m.logs.length === 0
+    ? '<div class="no-log">訪問記録がありません</div>'
+    : m.logs.map(l => {
+        const rb = {'面談できた':'rb-met','秘書対応':'rb-secretary','不在':'rb-absent','投函のみ':'rb-post'}[l.result] || 'rb-post';
+        return `<div class="log-item">
+          <div class="log-date">${l.date}</div>
+          <div class="log-content">
+            <div class="log-result"><span class="result-badge ${rb}">${l.result}</span> ${l.target !== '—' ? '/ ' + l.target : ''}</div>
+            ${l.items.length ? `<div class="log-detail">渡：${l.items.join('・')}</div>` : ''}
+            ${l.feeling ? `<div class="log-detail" style="margin-top:2px">${l.feeling}</div>` : ''}
+          </div>
+        </div>`;
+      }).join('');
+
+  document.getElementById('detail-content').innerHTML = `
+    <div class="detail-header">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <div style="width:14px;height:14px;border-radius:50%;background:${dotColor};box-shadow:0 0 0 3px rgba(255,255,255,.2)"></div>
+        <div style="font-size:12px;color:var(--slate-light)">${m.status !== '個別' ? m.status : '個別: ' + m.assignedTo}</div>
+      </div>
+      <div class="detail-name">${m.name}</div>
+      <div class="detail-tags">
+        <span class="tag tag-party ${partyClass}" style="background:rgba(255,255,255,.15);color:#fff">${m.party}</span>
+        ${m.nippon ? '<span class="tag" style="background:rgba(255,255,255,.15);color:#fff">日本会議</span>' : ''}
+        ${m.shinto ? '<span class="tag" style="background:rgba(255,255,255,.15);color:#fff">神道政治連盟</span>' : ''}
+      </div>
+    </div>
+
+    <div class="section-card">
+      <div class="section-title">基本情報</div>
+      <div class="field-row">
+        <div class="field-label">氏名</div>
+        <input class="field-input" id="d-name" value="${m.name}">
+      </div>
+      <div class="field-row">
+        <div class="field-label">所属政党</div>
+        <select class="field-input" id="d-party">
+          ${['自由民主党','立憲民主党','公明党','日本維新の会','国民民主党','その他'].map(p =>
+            `<option${m.party===p?' selected':''}>${p}</option>`).join('')}
+        </select>
+      </div>
+      <div class="field-row">
+        <div class="field-label">開所日時</div>
+        <input class="field-input" id="d-hours" value="${m.openHours}">
+      </div>
+      <div class="field-row">
+        <div class="field-label">概要・メモ</div>
+        <textarea class="field-input" id="d-summary">${m.summary}</textarea>
+      </div>
+    </div>
+
+    <div class="section-card">
+      <div class="section-title">所属団体</div>
+      <div class="checkbox-row">
+        <label for="d-nippon">日本会議国会議員懇談会</label>
+        <input type="checkbox" id="d-nippon" ${m.nippon ? 'checked' : ''}>
+      </div>
+      <div class="checkbox-row">
+        <label for="d-shinto">神道政治連盟国会議員懇談会</label>
+        <input type="checkbox" id="d-shinto" ${m.shinto ? 'checked' : ''}>
+      </div>
+    </div>
+
+    <div class="section-card">
+      <div class="section-title">担当変更</div>
+      <div class="field-row">
+        <select class="field-input" id="d-status" onchange="handleStatusChange()">
+          <option value="未定"${m.status==='未定'?' selected':''}>未定</option>
+          <option value="グループ1"${m.status==='グループ1'?' selected':''}>グループ1</option>
+          <option value="グループ2"${m.status==='グループ2'?' selected':''}>グループ2</option>
+          <option value="グループ3"${m.status==='グループ3'?' selected':''}>グループ3</option>
+          <option value="グループ4"${m.status==='グループ4'?' selected':''}>グループ4</option>
+          <option value="個別"${m.status==='個別'?' selected':''}>個別担当</option>
+        </select>
+      </div>
+      <div id="d-assigned-wrap" style="${m.status==='個別' ? '' : 'display:none'}">
+        <div class="field-label" style="margin-top:8px">担当者名</div>
+        <input class="field-input" id="d-assigned" value="${m.assignedTo}" placeholder="例：山本班長">
+      </div>
+    </div>
+
+    <a href="https://www.google.com/maps/dir/?api=1&destination=${m.lat},${m.lng}" target="_blank"
+       style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:14px;background:#34A853;color:#fff;border-radius:12px;font-size:15px;font-weight:700;font-family:'Noto Sans JP',sans-serif;text-decoration:none;margin-bottom:8px">
+      <span style="font-size:18px">🧭</span> Googleマップでルートを表示
+    </a>
+    <button class="btn-primary" onclick="saveDetail()">💾 変更を保存</button>
+
+    <div class="section-card" style="margin-top:12px">
+      <div class="section-title">訪問記録</div>
+      <div class="activity-log">${logsHtml}</div>
+      <button class="btn-primary btn-crimson" style="margin-top:12px" onclick="switchTab('report')">＋ 新しい訪問を記録</button>
+    </div>
+  `;
+}
+
+function handleStatusChange() {
+  const v = document.getElementById('d-status').value;
+  document.getElementById('d-assigned-wrap').style.display = v === '個別' ? 'block' : 'none';
+}
+
+function saveDetail() {
+  const m = members.find(x => x.id === currentMemberId);
+  m.name = document.getElementById('d-name').value;
+  m.party = document.getElementById('d-party').value;
+  m.openHours = document.getElementById('d-hours').value;
+  m.summary = document.getElementById('d-summary').value;
+  m.nippon = document.getElementById('d-nippon').checked;
+  m.shinto = document.getElementById('d-shinto').checked;
+  m.status = document.getElementById('d-status').value;
+  m.assignedTo = document.getElementById('d-assigned') ? document.getElementById('d-assigned').value : '';
+  renderDetail();
+  showToast('保存しました ✓');
+}
+
+// ════════════════════════════════════════
+// REPORT
+// ════════════════════════════════════════
+let reportState = {
+  dateMode: 'today', dateCustom: '',
+  result: '', target: '',
+  materials: {}, customMaterials: [],
+  feeling: ''
+};
+
+function renderReport() {
+  const m = members.find(x => x.id === currentMemberId);
+  if (!m) return;
+  const today = new Date().toISOString().split('T')[0];
+  const yesterday = new Date(Date.now()-86400000).toISOString().split('T')[0];
+  const allMats = [...defaultMaterials, ...(extraMaterials || [])];
+
+  document.getElementById('report-content').innerHTML = `
+    <div class="section-card">
+      <div style="font-size:13px;color:var(--text-soft);margin-bottom:14px">
+        <span style="font-weight:700;color:var(--navy)">${m.name}</span> への訪問を記録
+      </div>
+
+      <div class="report-section">
+        <div class="report-section-title">日付</div>
+        <div class="quick-date">
+          <button class="quick-date-btn${reportState.dateMode==='today'?' selected':''}" onclick="setDateMode('today')">今日<br><span style="font-size:11px;opacity:.7">${today}</span></button>
+          <button class="quick-date-btn${reportState.dateMode==='yesterday'?' selected':''}" onclick="setDateMode('yesterday')">昨日<br><span style="font-size:11px;opacity:.7">${yesterday}</span></button>
+          <button class="quick-date-btn${reportState.dateMode==='custom'?' selected':''}" onclick="setDateMode('custom')">指定</button>
+        </div>
+        <div id="custom-date-wrap" style="${reportState.dateMode==='custom'?'':'display:none'}">
+          <input type="date" class="field-input" id="r-date" value="${reportState.dateCustom||today}">
+        </div>
+      </div>
+
+      <div class="report-section">
+        <div class="report-section-title">結果</div>
+        <div class="toggle-group">
+          ${[
+            {v:'面談できた', icon:'🤝', label:'面談できた（継続）'},
+            {v:'秘書対応', icon:'👤', label:'秘書対応'},
+            {v:'不在', icon:'🚪', label:'不在'},
+            {v:'投函のみ', icon:'📬', label:'投函のみ'}
+          ].map(r => `
+            <button class="toggle-btn${reportState.result===r.v?' selected':''}" onclick="setResult('${r.v}')">
+              <span class="btn-icon">${r.icon}</span>${r.label}
+            </button>`).join('')}
+        </div>
+      </div>
+
+      <div class="report-section">
+        <div class="report-section-title">対応者</div>
+        <div class="toggle-group-h">
+          ${['本人','秘書','その他'].map(t =>
+            `<button class="toggle-btn-sm${reportState.target===t?' selected':''}" onclick="setTarget('${t}')">${t}</button>`
+          ).join('')}
+        </div>
+      </div>
+
+      <div class="report-section">
+        <div class="report-section-title">渡したもの</div>
+        <div class="materials-list" id="materials-list">
+          ${allMats.map(mat => `
+            <div class="material-item">
+              <input type="checkbox" id="mat-${mat}" ${reportState.materials[mat]?'checked':''} onchange="setMaterial('${mat}', this.checked)">
+              <label for="mat-${mat}">${mat}</label>
+            </div>`).join('')}
+        </div>
+        <button class="add-material-btn" onclick="addMaterial()">＋ 新しい資料を追加</button>
+      </div>
+
+      <div class="report-section">
+        <div class="report-section-title">感触・メモ</div>
+        <textarea class="feeling-textarea" id="r-feeling" placeholder="訪問の感触や次回への申し送りを自由に記入..." oninput="reportState.feeling=this.value">${reportState.feeling}</textarea>
+      </div>
+
+      <button class="btn-primary btn-crimson" onclick="saveReport()">記録を保存する</button>
+      <div style="height:8px"></div>
+      <button class="btn-primary btn-ghost" onclick="goBack()">キャンセル</button>
+    </div>
+  `;
+}
+
+function setDateMode(mode) {
+  reportState.dateMode = mode;
+  renderReport();
+}
+function setResult(v) { reportState.result = v; renderReport(); }
+function setTarget(v) { reportState.target = v; renderReport(); }
+function setMaterial(name, val) { reportState.materials[name] = val; }
+
+function addMaterial() {
+  const name = prompt('新しい資料名を入力してください：');
+  if (name && name.trim()) {
+    extraMaterials.push(name.trim());
+    reportState.materials[name.trim()] = true;
+    renderReport();
+  }
+}
+
+function saveReport() {
+  const m = members.find(x => x.id === currentMemberId);
+  const today = new Date().toISOString().split('T')[0];
+  const yesterday = new Date(Date.now()-86400000).toISOString().split('T')[0];
+  const date = reportState.dateMode === 'today' ? today
+    : reportState.dateMode === 'yesterday' ? yesterday
+    : (document.getElementById('r-date')?.value || today);
+  const feeling = document.getElementById('r-feeling')?.value || reportState.feeling || '';
+
+  if (!reportState.result) { showToast('結果を選択してください'); return; }
+
+  const items = [...defaultMaterials, ...extraMaterials].filter(mat => reportState.materials[mat]);
+  m.logs.unshift({
+    date, result: reportState.result,
+    target: reportState.target || '—',
+    items, feeling
+  });
+
+  // Reset
+  reportState = { dateMode:'today', dateCustom:'', result:'', target:'', materials:{}, feeling:'' };
+
+  showToast('記録を保存しました ✓');
+  switchTab('detail');
+}
+
+// ════════════════════════════════════════
+// UTILS
+// ════════════════════════════════════════
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+// ════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════
+function bootApp() {
+  renderList();
+  // マップはタブ切り替え時に遅延初期化するため、ここでは呼ばない
+}
+</script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" onload="bootApp()" onerror="bootApp()"></script>
+</body>
+</html>
