@@ -181,31 +181,50 @@
 
     <!-- LIST -->
     <div id="list-screen" class="screen">
-      <div class="filter-bar">
-        <select class="filter-select" id="filter-status" onchange="applyFilter()">
-          <option value="">担当：全て</option>
-          <option value="未定">未定</option>
-          <option value="グループ1">グループ1</option>
-          <option value="グループ2">グループ2</option>
-          <option value="グループ3">グループ3</option>
-          <option value="グループ4">グループ4</option>
-          <option value="個別">個別担当</option>
-        </select>
-        <select class="filter-select" id="filter-party" onchange="applyFilter()">
-          <option value="">政党：全て</option>
-          <option value="自由民主党">自民党</option>
-          <option value="立憲民主党">立憲</option>
-          <option value="公明党">公明党</option>
-          <option value="日本維新の会">維新</option>
-        </select>
-        <div class="filter-chip" id="fc-nippon" onclick="toggleFilterChip('nippon')">日本会議</div>
-        <div class="filter-chip" id="fc-shinto" onclick="toggleFilterChip('shinto')">神道政治連盟</div>
+      <div style="padding:12px 16px 0">
+
+        <!-- 検索窓 -->
+        <div class="search-wrap">
+          <span class="search-icon">🔍</span>
+          <input type="search" id="search-input" placeholder="議員名で検索…"
+            oninput="onSearchInput(this.value)" autocomplete="off">
+          <button class="search-clear" id="search-clear" onclick="clearSearch()">✕</button>
+        </div>
+
+        <!-- グループタブ -->
+        <div class="group-tabs" id="group-tabs">
+          <button class="group-tab active" data-group="" onclick="setGroupTab(this, '')">全て</button>
+          <button class="group-tab" data-group="グループ1" onclick="setGroupTab(this, 'グループ1')">G1</button>
+          <button class="group-tab" data-group="グループ2" onclick="setGroupTab(this, 'グループ2')">G2</button>
+          <button class="group-tab" data-group="グループ3" onclick="setGroupTab(this, 'グループ3')">G3</button>
+          <button class="group-tab" data-group="グループ4" onclick="setGroupTab(this, 'グループ4')">G4</button>
+          <button class="group-tab" data-group="個別" onclick="setGroupTab(this, '個別')">個別</button>
+          <button class="group-tab" data-group="未定" onclick="setGroupTab(this, '未定')">未定</button>
+        </div>
+
+        <!-- 追加フィルター -->
+        <div class="filter-bar" style="margin-bottom:10px">
+          <select class="filter-select" id="filter-party" onchange="applyFilter()">
+            <option value="">政党：全て</option>
+            <option value="自由民主党">自民党</option>
+            <option value="立憲民主党">立憲</option>
+            <option value="公明党">公明党</option>
+            <option value="日本維新の会">維新</option>
+          </select>
+          <div class="filter-chip" id="fc-nippon" onclick="toggleFilterChip('nippon')">日本会議</div>
+          <div class="filter-chip" id="fc-shinto" onclick="toggleFilterChip('shinto')">神道政治連盟</div>
+        </div>
+
+        <!-- 現在地ソート -->
+        <button id="sort-geo-btn" onclick="sortByDistance()" style="width:100%;margin-bottom:10px;display:flex;align-items:center;justify-content:center;gap:8px;padding:11px;background:#fff;border:2px solid var(--border);border-radius:10px;font-size:13px;font-weight:700;font-family:'Noto Sans JP',sans-serif;color:var(--navy);cursor:pointer;transition:all .2s">
+          <span id="sort-geo-icon" style="font-size:16px">&#128205;</span>
+          <span id="sort-geo-label">現在地から近い順に並び替え</span>
+        </button>
+
+        <div class="list-count" id="list-count"></div>
       </div>
-      <button id="sort-geo-btn" onclick="sortByDistance()" style="width:100%;margin-bottom:12px;display:flex;align-items:center;justify-content:center;gap:8px;padding:12px;background:#fff;border:2px solid var(--border);border-radius:10px;font-size:13px;font-weight:700;font-family:'Noto Sans JP',sans-serif;color:var(--navy);cursor:pointer;transition:all .2s">
-        <span id="sort-geo-icon" style="font-size:16px">&#128205;</span>
-        <span id="sort-geo-label">現在地から近い順に並び替え</span>
-      </button>
-      <div id="member-list"></div>
+
+      <div id="member-list" style="padding:0 16px"></div>
       <div class="pb-safe"></div>
     </div>
 
@@ -330,7 +349,7 @@ let members = [
 let currentTab = 'map';
 let currentMemberId = null;
 let tabHistory = [];
-let filterState = { status: '', party: '', nippon: false, shinto: false };
+let filterState = { status: '', party: '', nippon: false, shinto: false, query: '', groupTab: '' };
 let geoSort = { active: false, lat: null, lng: null };
 
 // ハバーサイン公式で直線距離(km)を計算
@@ -503,24 +522,52 @@ function renderMapPins() {
 function toggleFilterChip(type) {
   filterState[type] = !filterState[type];
   document.getElementById('fc-' + type).classList.toggle('active', filterState[type]);
-  applyFilter();
+  renderList();
 }
 function applyFilter() {
-  filterState.status = document.getElementById('filter-status').value;
   filterState.party = document.getElementById('filter-party').value;
+  renderList();
+}
+function onSearchInput(val) {
+  filterState.query = val.trim();
+  const clr = document.getElementById('search-clear');
+  if (clr) clr.style.display = val ? 'block' : 'none';
+  renderList();
+}
+function clearSearch() {
+  filterState.query = '';
+  const inp = document.getElementById('search-input');
+  if (inp) inp.value = '';
+  const clr = document.getElementById('search-clear');
+  if (clr) clr.style.display = 'none';
+  renderList();
+}
+function setGroupTab(el, group) {
+  filterState.groupTab = group;
+  document.querySelectorAll('#group-tabs .group-tab').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
   renderList();
 }
 
 function renderList() {
   const el = document.getElementById('member-list');
   let filtered = members.filter(m => {
-    if (filterState.status) {
-      if (filterState.status === '個別' && m.status !== '個別') return false;
-      if (filterState.status !== '個別' && m.status !== filterState.status) return false;
+    // グループタブ
+    if (filterState.groupTab) {
+      if (filterState.groupTab === '個別' && m.status !== '個別') return false;
+      if (filterState.groupTab !== '個別' && m.status !== filterState.groupTab) return false;
     }
+    // 政党
     if (filterState.party && m.party !== filterState.party) return false;
+    // 所属団体チップ
     if (filterState.nippon && !m.nippon) return false;
     if (filterState.shinto && !m.shinto) return false;
+    // 名前検索（スペース区切りのAND検索）
+    if (filterState.query) {
+      const tokens = filterState.query.replace(/\s+/g, ' ').split(' ');
+      const haystack = m.name + (m.assignedTo || '');
+      if (!tokens.every(t => haystack.includes(t))) return false;
+    }
     return true;
   });
 
@@ -531,6 +578,10 @@ function renderList() {
       _dist: calcDistance(geoSort.lat, geoSort.lng, m.lat, m.lng)
     })).sort((a, b) => a._dist - b._dist);
   }
+
+  // 件数表示
+  const countEl = document.getElementById('list-count');
+  if (countEl) countEl.textContent = `${filtered.length} 件`;
 
   if (filtered.length === 0) {
     el.innerHTML = `<div class="empty-state"><div class="es-icon">🔍</div><p>該当する議員がいません</p></div>`;
