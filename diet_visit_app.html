@@ -165,6 +165,24 @@
 </style>
 </head>
 <body>
+<!-- ローディングオーバーレイ -->
+<div id="loading-overlay" style="
+  display:flex; position:fixed; inset:0; z-index:9999;
+  background:var(--navy); flex-direction:column;
+  align-items:center; justify-content:center; gap:16px; color:#fff;">
+  <div style="font-size:32px">🏛️</div>
+  <div style="font-family:'Noto Serif JP',serif;font-size:16px;font-weight:700;letter-spacing:.06em">議員訪問管理</div>
+  <div style="display:flex;gap:6px;margin-top:4px">
+    <div style="width:8px;height:8px;border-radius:50%;background:var(--sky);animation:ld .8s infinite alternate"></div>
+    <div style="width:8px;height:8px;border-radius:50%;background:var(--sky);animation:ld .8s .2s infinite alternate"></div>
+    <div style="width:8px;height:8px;border-radius:50%;background:var(--sky);animation:ld .8s .4s infinite alternate"></div>
+  </div>
+  <div style="font-size:12px;color:var(--slate-light)">データを読み込み中…</div>
+</div>
+<style>
+@keyframes ld { from{opacity:.2;transform:translateY(0)} to{opacity:1;transform:translateY(-4px)} }
+</style>
+
 <div id="app">
   <!-- Header -->
   <div id="header">
@@ -261,12 +279,19 @@
 
 <script>
 // ════════════════════════════════════════
+// ════════════════════════════════════════
+// ★ GAS連携設定 ― デプロイ後にURLをここへ貼り付けてください
+// ════════════════════════════════════════
+const GAS_URL = 'ここにGASのデプロイURLを入れる';
+
+// ════════════════════════════════════════
 // DATA
 // ════════════════════════════════════════
 const defaultMaterials = ['広告文','亡国政権1','亡国政権2','野望1','野望2','野望3','策謀'];
 let extraMaterials = [];
 
-let members = [
+// フォールバック用サンプルデータ（GAS未設定時 or 通信失敗時に使用）
+const FALLBACK_MEMBERS = [
   {
     id: 1,
     name: '山田 太郎',
@@ -342,6 +367,9 @@ let members = [
     ]
   }
 ];
+
+// 実行時に使うメンバー配列（GASから上書きされる）
+let members = [];
 
 // ════════════════════════════════════════
 // STATE
@@ -723,18 +751,30 @@ function handleStatusChange() {
   document.getElementById('d-assigned-wrap').style.display = v === '個別' ? 'block' : 'none';
 }
 
-function saveDetail() {
+async function saveDetail() {
   const m = members.find(x => x.id === currentMemberId);
-  m.name = document.getElementById('d-name').value;
-  m.party = document.getElementById('d-party').value;
+  m.name      = document.getElementById('d-name').value;
+  m.party     = document.getElementById('d-party').value;
   m.openHours = document.getElementById('d-hours').value;
-  m.summary = document.getElementById('d-summary').value;
-  m.nippon = document.getElementById('d-nippon').checked;
-  m.shinto = document.getElementById('d-shinto').checked;
-  m.status = document.getElementById('d-status').value;
+  m.summary   = document.getElementById('d-summary').value;
+  m.nippon    = document.getElementById('d-nippon').checked;
+  m.shinto    = document.getElementById('d-shinto').checked;
+  m.status    = document.getElementById('d-status').value;
   m.assignedTo = document.getElementById('d-assigned') ? document.getElementById('d-assigned').value : '';
+
   renderDetail();
-  showToast('保存しました ✓');
+
+  // GASへ送信（logsは送らず軽量化。GAS側でlogsは別管理）
+  const payload = { action: 'updateMember', member: { ...m, logs: undefined } };
+  const result  = await gasPost(payload);
+
+  if (result && result.status === 'ok') {
+    showToast('保存しました（クラウド同期済）✓');
+  } else if (!GAS_URL || GAS_URL.includes('ここに')) {
+    showToast('保存しました（ローカル）✓');
+  } else {
+    showToast('保存しました ※クラウド同期に失敗しました');
+  }
 }
 
 // ════════════════════════════════════════
@@ -837,7 +877,7 @@ function addMaterial() {
   }
 }
 
-function saveReport() {
+async function saveReport() {
   const m = members.find(x => x.id === currentMemberId);
   const today = new Date().toISOString().split('T')[0];
   const yesterday = new Date(Date.now()-86400000).toISOString().split('T')[0];
@@ -849,22 +889,78 @@ function saveReport() {
   if (!reportState.result) { showToast('結果を選択してください'); return; }
 
   const items = [...defaultMaterials, ...extraMaterials].filter(mat => reportState.materials[mat]);
-  m.logs.unshift({
+  const newLog = {
     date, result: reportState.result,
     target: reportState.target || '—',
     items, feeling
-  });
+  };
+  m.logs.unshift(newLog);
 
   // Reset
   reportState = { dateMode:'today', dateCustom:'', result:'', target:'', materials:{}, feeling:'' };
 
-  showToast('記録を保存しました ✓');
   switchTab('detail');
+
+  // GASへ送信
+  const result = await gasPost({ action: 'addLog', memberId: m.id, log: newLog });
+
+  if (result && result.status === 'ok') {
+    showToast('記録を保存しました（クラウド同期済）✓');
+  } else if (!GAS_URL || GAS_URL.includes('ここに')) {
+    showToast('記録を保存しました（ローカル）✓');
+  } else {
+    showToast('記録を保存しました ※クラウド同期に失敗しました');
+  }
 }
 
 // ════════════════════════════════════════
 // UTILS
 // ════════════════════════════════════════
+
+/** GASへ POST する共通関数。失敗してもオフラインで継続 */
+async function gasPost(payload) {
+  if (!GAS_URL || GAS_URL.includes('ここに')) return null; // URL未設定ならスキップ
+  try {
+    const res = await fetch(GAS_URL, {
+      method : 'POST',
+      headers: { 'Content-Type': 'text/plain' }, // GASはtext/plainで受け取る
+      body   : JSON.stringify(payload)
+    });
+    return await res.json();
+  } catch (err) {
+    console.warn('GAS POST失敗（オフライン継続）:', err);
+    return null;
+  }
+}
+
+/** GASから議員データを取得する */
+async function fetchMembers() {
+  if (!GAS_URL || GAS_URL.includes('ここに')) {
+    // URL未設定 → フォールバックデータで起動
+    members = JSON.parse(JSON.stringify(FALLBACK_MEMBERS));
+    return;
+  }
+  try {
+    const url = GAS_URL + '?action=getMembers';
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.status === 'ok' && Array.isArray(data.members) && data.members.length > 0) {
+      members = data.members;
+    } else {
+      console.warn('GASレスポンス異常。フォールバックデータを使用:', data);
+      members = JSON.parse(JSON.stringify(FALLBACK_MEMBERS));
+    }
+  } catch (err) {
+    console.warn('GETフェッチ失敗。フォールバックデータを使用:', err);
+    members = JSON.parse(JSON.stringify(FALLBACK_MEMBERS));
+  }
+}
+
+/** ローディング画面を表示／非表示 */
+function showLoading(show) {
+  document.getElementById('loading-overlay').style.display = show ? 'flex' : 'none';
+}
+
 function showToast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -875,7 +971,10 @@ function showToast(msg) {
 // ════════════════════════════════════════
 // INIT
 // ════════════════════════════════════════
-function bootApp() {
+async function bootApp() {
+  showLoading(true);
+  await fetchMembers();
+  showLoading(false);
   renderList();
   // マップはタブ切り替え時に遅延初期化するため、ここでは呼ばない
 }
